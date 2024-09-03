@@ -63,47 +63,37 @@ public class Main {
            message;
   }
 
-  private static void processRequest(String path, String httpRequestHeader, String httpRequestBody, Socket clientRequest) throws IOException {
-    String endLine = "-----------------------------------------------------------------";
-    String[] pathParts = path.split("/");
-    for (int i = 0; i < pathParts.length; i++) {
-      System.out.println("Path part:[" + i + "]: " + pathParts[i]);
-    }
-    if (pathParts.length == 0) {
-      String message = "Welcome to the Homepage!";
-      String httpResponse = getHttpResponse(200, "OK", message);
-      System.out.println("Sending response: " + httpResponse);
-      System.out.println(endLine);
-      clientRequest.getOutputStream().write(httpResponse.getBytes());
-    } else if (pathParts.length != 0) {
-      if (pathParts.length >= 2 && pathParts[1].equals("echo")) {
-        if (pathParts.length == 2) {
-          String message = "Please provide a message to echo";
-          String httpResponse = getHttpResponse(200, "OK", message);
-          System.out.println("Sending response: " + httpResponse);
-          System.out.println(endLine);
-          clientRequest.getOutputStream().write(httpResponse.getBytes());
-        } else if (pathParts.length == 3) {
-          String message = pathParts[2];
-          String httpResponse = getHttpResponse(200, "OK", message);
-          System.out.println("Sending response: " + httpResponse);
-          System.out.println(endLine);
-          clientRequest.getOutputStream().write(httpResponse.getBytes());
+    private static void processRequest(String path, String httpRequestHeader, String httpRequestBody, Socket clientRequest) throws IOException {
+        String endLine = "-----------------------------------------------------------------";
+        String[] pathParts = path.split("/");
+        for (int i = 0; i < pathParts.length; i++) {
+            System.out.println("Path part:[" + i + "]: " + pathParts[i]);
         }
-      } else if (pathParts[1].equals("user-agent")) {
-        String message = httpRequestHeader;
-        String httpResponse = getHttpResponse(200, "OK", message);
+        String httpResponse;
+        if (pathParts.length == 0) {
+            String message = "Welcome to the Homepage!";
+            httpResponse = getHttpResponse(200, "OK", message);
+        } else if (pathParts.length >= 2 && pathParts[1].equals("echo")) {
+            if (pathParts.length == 2) {
+                String message = "Please provide a message to echo";
+                httpResponse = getHttpResponse(200, "OK", message);
+            } else {
+                String message = pathParts[2];
+                httpResponse = getHttpResponse(200, "OK", message);
+            }
+        } else if (pathParts[1].equals("user-agent")) {
+            // Properly normalize header line endings to \r\n
+            String normalizedHeader = httpRequestHeader.replaceAll("\n", "\r\n");
+            httpResponse = getHttpResponse(200, "OK", normalizedHeader);
+        } else {
+            String message = "The requested path is not available";
+            httpResponse = getHttpResponse(404, "Not Found", message);
+        }
+
         System.out.println("Sending response: " + httpResponse);
         System.out.println(endLine);
         clientRequest.getOutputStream().write(httpResponse.getBytes());
-      } else {
-        String message = "The requested path is not available";
-        String httpResponse = getHttpResponse(404, "Not Found", message);
-        System.out.println("Sending response: " + httpResponse);
-        System.out.println(endLine);
-        clientRequest.getOutputStream().write(httpResponse.getBytes());
-      }
+        clientRequest.close();
     }
-    clientRequest.close();
-  }
+
 }
