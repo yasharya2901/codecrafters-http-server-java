@@ -1,5 +1,8 @@
 import java.io.IOException;
 import java.net.Socket;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -16,9 +19,9 @@ public class RequestProcessor implements Runnable {
         this.clientRequest = clientRequest;
     }
 
-    private String getHttpResponse(int responseCode, String responseMessage, String message) {
+    private String getHttpResponse(int responseCode, String responseMessage, String message, String contentType) {
         return "HTTP/1.1 " + responseCode + " " + responseMessage + "\r\n" +
-                "Content-Type: text/plain\r\n" +
+                "Content-Type: "+contentType+"\r\n" +
                 "Content-Length: " + message.getBytes().length + "\r\n" +
                 "\r\n" +
                 message;
@@ -32,7 +35,7 @@ public class RequestProcessor implements Runnable {
         }
         if (pathParts.length == 0) {
             String message = "";
-            String httpResponse = getHttpResponse(200, "OK", message);
+            String httpResponse = getHttpResponse(200, "OK", message, "text/plain");
             System.out.println("Sending response: " + httpResponse);
             System.out.println(endLine);
             clientRequest.getOutputStream().write(httpResponse.getBytes());
@@ -40,34 +43,63 @@ public class RequestProcessor implements Runnable {
             if (pathParts.length >= 2 && pathParts[1].equals("echo")) {
                 if (pathParts.length == 2) {
                     String message = "Please provide a message to echo";
-                    String httpResponse = getHttpResponse(200, "OK", message);
+                    String httpResponse = getHttpResponse(200, "OK", message, "text/plain");
                     System.out.println("Sending response: " + httpResponse);
                     System.out.println(endLine);
                     clientRequest.getOutputStream().write(httpResponse.getBytes());
                 } else if (pathParts.length == 3) {
                     String message = pathParts[2];
-                    String httpResponse = getHttpResponse(200, "OK", message);
+                    String httpResponse = getHttpResponse(200, "OK", message, "text/plain");
                     System.out.println("Sending response: " + httpResponse);
                     System.out.println(endLine);
                     clientRequest.getOutputStream().write(httpResponse.getBytes());
                 }
             } else if (pathParts[1].equals("user-agent")) {
-                String[] parts = httpRequestHeader.split("[\\s\\n]+");
+                String[] parts = httpRequestHeader.split("\n");
                 Map<String, String> headers = new HashMap<>();
-                for (int i = 0; i < parts.length; i += 2) {
-                    if (parts[i].charAt(parts[i].length() - 1) == ':') {
-                        parts[i] = parts[i].substring(0, parts[i].length() - 1);
+                for (String part: parts) {
+                    String[] attr = part.split(":");
+                    if (attr.length == 2) {
+                        headers.put(attr[0].toLowerCase().trim(), attr[1].trim());
                     }
-                    headers.put(parts[i].toLowerCase(), parts[i + 1]);
                 }
                 String message = headers.get("user-agent");
-                String httpResponse = getHttpResponse(200, "OK", message);
+                String httpResponse = getHttpResponse(200, "OK", message, "text/plain");
                 System.out.println("Sending response: " + httpResponse);
                 System.out.println(endLine);
                 clientRequest.getOutputStream().write(httpResponse.getBytes());
+            } else if (pathParts.length >=2 && pathParts[1].equals("files")) {
+                  if (pathParts.length == 2) {
+                      String message = "Please provide a file name";
+                      String httpResponse = getHttpResponse(404, "Not Found", message, "text/plain");
+                      System.out.println("Sending response: " + httpResponse);
+                      System.out.println(endLine);
+                      clientRequest.getOutputStream().write(httpResponse.getBytes());
+                      clientRequest.close();
+                      return;
+                  }
+
+                  String fileName = pathParts[2];
+                  String fullPath = Main.directoryPath + (Main.OPERATING_SYSTEM.split(" ")[0].toLowerCase().equals("windows") ? "\\" : "/") + fileName;
+                  Path filePath = Paths.get(fullPath);
+                  if (!Files.exists(filePath)) {
+                        String message = "The requested file is not available";
+                        String httpResponse = getHttpResponse(404, "Not Found", message, "text/plain");
+                        System.out.println("Sending response: " + httpResponse);
+                        System.out.println(endLine);
+                        clientRequest.getOutputStream().write(httpResponse.getBytes());
+                        clientRequest.close();
+                        return;
+                  }
+                  
+                  String message = Files.readString(filePath);
+                  String httpResponse = getHttpResponse(200, "OK", message, "application/octet-stream");
+                  System.out.println("Sending response: " + httpResponse);
+                  System.out.println(endLine);
+                  clientRequest.getOutputStream().write(httpResponse.getBytes());
             } else {
                 String message = "The requested path is not available";
-                String httpResponse = getHttpResponse(404, "Not Found", message);
+                String httpResponse = getHttpResponse(404, "Not Found", message, "text/plain");
                 System.out.println("Sending response: " + httpResponse);
                 System.out.println(endLine);
                 clientRequest.getOutputStream().write(httpResponse.getBytes());
