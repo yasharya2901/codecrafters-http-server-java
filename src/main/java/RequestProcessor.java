@@ -1,3 +1,4 @@
+import java.io.File;
 import java.io.IOException;
 import java.net.Socket;
 import java.nio.file.Files;
@@ -10,12 +11,14 @@ public class RequestProcessor implements Runnable {
     private String path;
     private String httpRequestHeader;
     private String httpRequestBody;
+    private String requestMethod;
     private Socket clientRequest;
 
-    public RequestProcessor(String path, String httpRequestHeader, String httpRequestBody, Socket clientRequest) {
+    public RequestProcessor(String path, String httpRequestMethod, String httpRequestHeader, String httpRequestBody, Socket clientRequest) {
         this.path = path;
         this.httpRequestHeader = httpRequestHeader;
         this.httpRequestBody = httpRequestBody;
+        this.requestMethod = httpRequestMethod;
         this.clientRequest = clientRequest;
     }
 
@@ -27,12 +30,50 @@ public class RequestProcessor implements Runnable {
                 message;
     }
 
+    private String getHttpResponse(int responseCode, String responseMessage) {
+        return "HTTP/1.1 " + responseCode + " " + responseMessage + "\r\n" +
+                "\r\n";
+    }
+
     public void processRequest() throws IOException, InterruptedException {
         String endLine = "-----------------------------------------------------------------";
         String[] pathParts = path.split("/");
         for (int i = 0; i < pathParts.length; i++) {
             System.out.println("Path part:[" + i + "]: " + pathParts[i]);
         }
+
+        if (this.requestMethod.equals("POST")) {
+            if (pathParts.length == 3) {
+                if (pathParts[1].equals("files")) {
+                    String fileName = pathParts[2];
+                    String fullPath = Main.directoryPath + File.separator + fileName;
+                    String fileContent = this.httpRequestBody;
+                    Path filePath = Paths.get(fullPath);
+                    if (!Files.exists(filePath)) {
+                        Files.createFile(filePath);
+                    }
+                    Files.writeString(filePath, fileContent);
+                    String httpResponse = getHttpResponse(201, "Created");
+                    System.out.println("Sending response: " + httpResponse);
+                    System.out.println(endLine);
+                    clientRequest.getOutputStream().write(httpResponse.getBytes());
+                }
+            } else if (pathParts.length == 2) {
+                if (pathParts[1].equals("files")) {
+                    String message = "Please provide a file name";
+                    String httpResponse = getHttpResponse(404, "Not Found", message, "text/plain");
+                    System.out.println("Sending response: " + httpResponse);
+                    System.out.println(endLine);
+                    clientRequest.getOutputStream().write(httpResponse.getBytes());
+                    clientRequest.close();
+                    return;
+                }
+            }
+
+            clientRequest.close();
+            return;
+        }
+
         if (pathParts.length == 0) {
             String message = "";
             String httpResponse = getHttpResponse(200, "OK", message, "text/plain");
