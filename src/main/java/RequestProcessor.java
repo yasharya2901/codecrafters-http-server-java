@@ -1,11 +1,14 @@
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.GZIPOutputStream;
 
 public class RequestProcessor implements Runnable {
     private String path;
@@ -13,6 +16,7 @@ public class RequestProcessor implements Runnable {
     private String httpRequestBody;
     private String requestMethod;
     private Socket clientRequest;
+    private OutputStream outputStream;
     private Map<String, String> headers = new HashMap<>();
 
     public RequestProcessor(String path, String httpRequestMethod, String httpRequestHeader, String httpRequestBody, Socket clientRequest) {
@@ -21,6 +25,11 @@ public class RequestProcessor implements Runnable {
         this.httpRequestBody = httpRequestBody;
         this.requestMethod = httpRequestMethod;
         this.clientRequest = clientRequest;
+        try {
+            this.outputStream = clientRequest.getOutputStream();
+        } catch (IOException e) {
+            System.out.println("IOException: " + e.getMessage());
+        }
         String[] parts = httpRequestHeader.split("\n");
         for (String part: parts) {
             String[] attr = part.split(":");
@@ -39,13 +48,49 @@ public class RequestProcessor implements Runnable {
                 message;
     }
 
-    private String getHttpResponse(int responseCode, String responseMessage, String message, String contentType, String compressionType) {
-        return "HTTP/1.1 " + responseCode + " " + responseMessage + "\r\n" +
+
+
+    private CompressedReturnObject getHttpResponse(int responseCode, String responseMessage, String message, String contentType, String compressionType) throws IOException {
+        String[] compressionTypes = compressionType.split(",");
+        String compressionUsed = "";
+        byte [] gzipData = null;
+        for (String type: compressionTypes) {
+            switch (type.trim()) {
+                case "gzip":
+                    compressionUsed = SupportedCompression.gzip.toString();
+                    break;
+                case "deflate":
+                    compressionUsed = SupportedCompression.deflate.toString();
+                    break;
+                case "br":
+                    compressionUsed = SupportedCompression.br.toString();
+                    break;
+            }
+        }
+        if (compressionUsed.equals("")) {
+            return new CompressedReturnObject(getHttpResponse(responseCode, responseMessage, message, contentType), null);
+        }
+
+        if (compressionUsed.equals(SupportedCompression.gzip.toString())) {
+            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+            try {
+                GZIPOutputStream gzipOutputStream = new GZIPOutputStream(byteArrayOutputStream);
+                gzipOutputStream.write(message.getBytes(StandardCharsets.UTF_8));
+                gzipOutputStream.close();
+            }
+            catch (IOException e) {
+                System.out.println("IOException: " + e.getMessage());
+            }
+            gzipData = byteArrayOutputStream.toByteArray();
+
+
+        }
+
+        return new CompressedReturnObject("HTTP/1.1 " + responseCode + " " + responseMessage + "\r\n" +
                 "Content-Type: "+contentType+"\r\n" +
-                "Content-Length: " + message.getBytes().length + "\r\n" +
-                "Content-Encoding: gzip\r\n" +
-                "\r\n" +
-                message;
+                "Content-Length: " + ((gzipData != null) ? gzipData.length : 0) + "\r\n" +
+                "Content-Encoding: "+ compressionUsed +"\r\n" +
+                "\r\n", gzipData);
     }
 
     private String getHttpResponse(int responseCode, String responseMessage) {
@@ -103,24 +148,28 @@ public class RequestProcessor implements Runnable {
                 if (pathParts.length == 2) {
                     String httpResponse;
                     String message = "Please provide a message to echo";
-                    if (this.headers.containsKey("accept-encoding") && this.headers.get("accept-encoding").contains("gzip")) {
-                        httpResponse = getHttpResponse(200, "OK", message, "text/plain", "gzip");
-                    } else {
-                        httpResponse = getHttpResponse(200, "OK", message, "text/plain");
-                    }
+                    httpResponse = getHttpResponse(200, "OK", message, "text/plain");
                     System.out.println("Sending response: " + httpResponse);
                     System.out.println(endLine);
                     clientRequest.getOutputStream().write(httpResponse.getBytes());
                 } else if (pathParts.length == 3) {
                     String message = pathParts[2];
                     String httpResponse;
+                    CompressedReturnObject compressedReturnObject = null;
                     if (this.headers.containsKey("accept-encoding") && this.headers.get("accept-encoding").contains("gzip")) {
-                        httpResponse = getHttpResponse(200, "OK", message, "text/plain", "gzip");
+                        compressedReturnObject = getHttpResponse(200, "OK", message, "text/plain", this.headers.get("accept-encoding"));
+                        httpResponse = compressedReturnObject.getMessage();
                     } else {
                         httpResponse = getHttpResponse(200, "OK", message, "text/plain");
                     }
                     System.out.println("Sending response: " + httpResponse);
                     System.out.println(endLine);
+                    if (compressedReturnObject != null && compressedReturnObject.getData() != null) {
+                        outputStream.write(httpResponse.getBytes());
+                        outputStream.write(compressedReturnObject.getData());
+                        clientRequest.close();
+                        return;
+                    }
                     clientRequest.getOutputStream().write(httpResponse.getBytes());
                 }
             } else if (pathParts[1].equals("user-agent")) {
