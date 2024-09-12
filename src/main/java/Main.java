@@ -7,9 +7,9 @@ import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Arrays;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.zip.GZIPInputStream;
 
 public class Main {
       static String directoryPath;
@@ -23,12 +23,11 @@ public class Main {
               }
               if (args[0].equals("--directory")) {
                   directoryPath = args[1];
-                  if (doesDirectoryExist(directoryPath)) {
-                      System.out.println("Directory exists");
-                  } else {
+                  if (!doesDirectoryExist(directoryPath)) {
                       System.out.println("Directory does not exist");
                       return;
                   }
+                  System.out.println("Directory exists");
               }
           }
           try (ExecutorService executorService = Executors.newFixedThreadPool(10)) {
